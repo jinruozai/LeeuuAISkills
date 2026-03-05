@@ -1,0 +1,159 @@
+{
+  "9": {
+    "inputs": {
+      "filename_prefix": "z-image",
+      "images": [
+        "57",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "Save Image"
+    }
+  },
+  "39": {
+    "inputs": {
+      "clip_name": "qwen_3_4b.safetensors",
+      "type": "lumina2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Load CLIP"
+    }
+  },
+  "40": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Load VAE"
+    }
+  },
+  "41": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "EmptySD3LatentImage"
+    }
+  },
+  "42": {
+    "inputs": {
+      "conditioning": [
+        "45",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "ConditioningZeroOut"
+    }
+  },
+  "43": {
+    "inputs": {
+      "samples": [
+        "44",
+        0
+      ],
+      "vae": [
+        "40",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE Decode"
+    }
+  },
+  "44": {
+    "inputs": {
+      "seed": 361345044354586,
+      "steps": 9,
+      "cfg": 1,
+      "sampler_name": "res_multistep",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "47",
+        0
+      ],
+      "positive": [
+        "45",
+        0
+      ],
+      "negative": [
+        "42",
+        0
+      ],
+      "latent_image": [
+        "41",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "KSampler"
+    }
+  },
+  "45": {
+    "inputs": {
+      "text": "数字水粉厚涂, 厚涂插画, 哑光质感, 纯2D手绘,\n无3D感, 无光泽, 无油腻感,\ndigital gouache painting, impasto thick paint texture,\nmatte painterly surface, no glossy material, no wet shine,\nopaque layered brushstrokes, rich pigment body,\nHAIR: matte velvet powdery finish, chalky dry-brush strokes,\nsoft diffused rim light on hair, no reflective streaks,\nhard edge on clothing silhouette, soft edge on hair,\nwarm orange-gold key light, cool blue-teal shadows,\nstrong color temperature contrast, soft halation,\nintricate gold filigree on jewelry,\nfine embroidery on collar cuffs and hem only,\ndark background #1a1a2e, seamless character edge\n\n\n\nisometric game sprite, 45 degree diagonal from upper-left,\ncamera 30 degree elevation looking down,\nfacing lower-right, full body visible, centered,\northographic isometric view\n\n\n\ntiny female immortal, flowing white-ivory hanfu,\ntranslucent gossamer sleeves, soft pink inner robe,\nsmall gold crown, cherry blossom hairpin,\nholding glowing lotus lantern,\ngentle curious expression, rosy cheeks, bright open eyes,\npink + ivory + soft gold palette",
+      "speak_and_recognation": {
+        "__value__": [
+          false,
+          true
+        ]
+      },
+      "clip": [
+        "39",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP Text Encode (Prompt)"
+    }
+  },
+  "46": {
+    "inputs": {
+      "unet_name": "z_image_turbo_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Load Diffusion Model"
+    }
+  },
+  "47": {
+    "inputs": {
+      "shift": 3,
+      "model": [
+        "46",
+        0
+      ]
+    },
+    "class_type": "ModelSamplingAuraFlow",
+    "_meta": {
+      "title": "ModelSamplingAuraFlow"
+    }
+  },
+  "57": {
+    "inputs": {
+      "torchscript_jit": "default",
+      "image": [
+        "43",
+        0
+      ]
+    },
+    "class_type": "InspyrenetRembg",
+    "_meta": {
+      "title": "去除背景"
+    }
+  }
+}
