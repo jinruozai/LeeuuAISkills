@@ -2,6 +2,7 @@
 import os
 import sys
 import argparse
+import json
 
 # 添加python目录到Python路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
@@ -9,8 +10,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))
 # 导入模块
 from ani_parser import (
     parse_2dani_to_json,
+    parse_2dani_to_json_with_embedded_images,
     create_2dani_from_json,
     create_2dani_from_image
+)
+from ani_scale import (
+    scale_animation,
+    scale_animation_to_fit
 )
 
 def main():
@@ -41,6 +47,21 @@ def main():
     parser_from_image.add_argument('--center-x', type=float, help='中心点X坐标')
     parser_from_image.add_argument('--center-y', type=float, help='中心点Y坐标')
     parser_from_image.add_argument('--embed', action='store_true', help='将图片以二进制格式嵌入到动画文件中')
+    
+    # scale命令：按比例缩放动画
+    parser_scale = subparsers.add_parser('scale', help='按比例缩放动画')
+    parser_scale.add_argument('input_files', nargs='+', help='输入的2dani文件路径（可多个）')
+    parser_scale.add_argument('--scale', type=float, required=True, help='缩放因子')
+    parser_scale.add_argument('--output', help='输出文件路径，默认为覆盖原文件')
+    parser_scale.add_argument('--output-dir', help='输出目录，默认为输入文件所在目录')
+    
+    # fit命令：按目标尺寸适配缩放动画
+    parser_fit = subparsers.add_parser('fit', help='按目标尺寸适配缩放动画')
+    parser_fit.add_argument('input_files', nargs='+', help='输入的2dani文件路径（可多个）')
+    parser_fit.add_argument('--width', type=int, required=True, help='目标宽度')
+    parser_fit.add_argument('--height', type=int, required=True, help='目标高度')
+    parser_fit.add_argument('--output', help='输出文件路径，默认为覆盖原文件')
+    parser_fit.add_argument('--output-dir', help='输出目录，默认为输入文件所在目录')
     
     args = parser.parse_args()
     
@@ -107,6 +128,98 @@ def main():
             
         except Exception as e:
             print(f"✗ 转换失败: {e}")
+            return 1
+    
+    elif args.command == 'scale':
+        # 按比例缩放动画
+        try:
+            for input_file in args.input_files:
+                # 读取2dani文件
+                with open(input_file, 'rb') as f:
+                    ani_data = f.read()
+                
+                # 转换为JSON
+                json_data = parse_2dani_to_json_with_embedded_images(ani_data)
+                
+                # 输出数据的所有键
+                print(f"json_data 的所有键: {list(json_data["animation"]["link_images"])}")
+  
+                # 缩放动画
+                scaled_data = scale_animation(json_data, args.scale)
+                
+                
+                # 转换回2dani，传递原始文件作为预览图片
+                scaled_ani_data = create_2dani_from_json(scaled_data, preview_image_path=input_file,embed_binary=True)
+                
+                # 确定输出路径
+                if args.output:
+                    output_file = args.output
+                    # 确保输出目录存在
+                    output_dir = os.path.dirname(output_file)
+                    if output_dir:
+                        os.makedirs(output_dir, exist_ok=True)
+                elif args.output_dir:
+                    output_dir = args.output_dir
+                    os.makedirs(output_dir, exist_ok=True)
+                    output_file = os.path.join(output_dir, os.path.basename(input_file))
+                else:
+                    # 直接覆盖原文件
+                    output_file = input_file
+                
+                # 保存文件
+                with open(output_file, 'wb') as f:
+                    f.write(scaled_ani_data)
+                
+                print(f"✓ 成功缩放动画: {input_file} → {output_file}")
+                print(f"  缩放因子: {args.scale}")
+                print(f"  文件大小: {len(scaled_ani_data)} bytes")
+            
+        except Exception as e:
+            print(f"✗ 缩放失败: {e}")
+            return 1
+    
+    elif args.command == 'fit':
+        # 按目标尺寸适配缩放动画
+        try:
+            for input_file in args.input_files:
+                # 读取2dani文件
+                with open(input_file, 'rb') as f:
+                    ani_data = f.read()
+                
+                # 转换为JSON
+                json_data = parse_2dani_to_json(ani_data)
+                
+                # 缩放动画以适配目标尺寸
+                scaled_data = scale_animation_to_fit(json_data, args.width, args.height)
+                
+                # 转换回2dani，传递原始文件作为预览图片
+                scaled_ani_data = create_2dani_from_json(scaled_data, preview_image_path=input_file)
+                
+                # 确定输出路径
+                if args.output:
+                    output_file = args.output
+                    # 确保输出目录存在
+                    output_dir = os.path.dirname(output_file)
+                    if output_dir:
+                        os.makedirs(output_dir, exist_ok=True)
+                elif args.output_dir:
+                    output_dir = args.output_dir
+                    os.makedirs(output_dir, exist_ok=True)
+                    output_file = os.path.join(output_dir, os.path.basename(input_file))
+                else:
+                    # 直接覆盖原文件
+                    output_file = input_file
+                
+                # 保存文件
+                with open(output_file, 'wb') as f:
+                    f.write(scaled_ani_data)
+                
+                print(f"✓ 成功适配缩放动画: {input_file} → {output_file}")
+                print(f"  目标尺寸: {args.width}x{args.height}")
+                print(f"  文件大小: {len(scaled_ani_data)} bytes")
+            
+        except Exception as e:
+            print(f"✗ 适配缩放失败: {e}")
             return 1
     
     else:

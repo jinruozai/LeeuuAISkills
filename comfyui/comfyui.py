@@ -72,13 +72,34 @@ def _parse_output_path(output):
     
     return output_dir, output_filename
 
-def _save_as_2dani(image, output_path):
+def _resize_image(image, width=None, height=None):
+    """
+    Resize image to specified dimensions
+    
+    Args:
+        image: PIL Image object
+        width: Target width (optional)
+        height: Target height (optional)
+        
+    Returns:
+        PIL Image object: Resized image
+    """
+    if width and height:
+        _logger.info(f"Resizing image to {width}x{height}")
+        return image.resize((width, height), Image.Resampling.LANCZOS)
+    return image
+
+def _save_as_2dani(image, output_path, width=None, height=None, center_x=None, center_y=None):
     """
     Save image as .2dani.bmp format with embedded binary
     
     Args:
         image: PIL Image object
         output_path: Target output path (must end with .2dani.bmp)
+        width: Target width (optional)
+        height: Target height (optional)
+        center_x: Center point X coordinate (optional, only for .2dani.bmp)
+        center_y: Center point Y coordinate (optional, only for .2dani.bmp)
         
     Returns:
         str: The actual saved path (either .2dani.bmp or fallback .png)
@@ -89,11 +110,17 @@ def _save_as_2dani(image, output_path):
             temp_png = output_path + ".temp.png"
             image.save(temp_png)
             
+            # Use provided dimensions or image dimensions
+            target_width = width if width else image.width
+            target_height = height if height else image.height
+            
             _logger.info(f"Converting to 2dani.bmp with embedded binary...")
             ani_data = create_2dani_from_image(
                 temp_png, 
-                image.width, 
-                image.height, 
+                target_width, 
+                target_height, 
+                center_x, 
+                center_y, 
                 embed_binary=True
             )
             
@@ -222,7 +249,7 @@ class ComfyUI:
         }
         return workflow_data
     
-    def generate_images(self, prompt_text=None, workflow_path=None, output=None):
+    def generate_images(self, prompt_text=None, workflow_path=None, output=None, width=None, height=None, center_x=None, center_y=None):
         """
         生成图像并返回保存的文件路径列表
         
@@ -230,6 +257,10 @@ class ComfyUI:
             prompt_text: 提示词文本
             workflow_path: 工作流文件名或路径
             output: 输出目录或文件路径（可选）
+            width: Target width (optional)
+            height: Target height (optional)
+            center_x: Center point X coordinate (optional, only for .2dani.bmp)
+            center_y: Center point Y coordinate (optional, only for .2dani.bmp)
         
         Returns:
             保存的图像路径列表
@@ -311,8 +342,13 @@ class ComfyUI:
                         
                         # Check if output is .2dani.bmp
                         is_2dani = output_name.lower().endswith('.2dani.bmp')
+                        
+                        # 调整图片尺寸（仅对非2dani.bmp格式）
+                        if not is_2dani:
+                            image = _resize_image(image, width, height)
+                        
                         if is_2dani:
-                            saved_path = _save_as_2dani(image, output_path)
+                            saved_path = _save_as_2dani(image, output_path, width, height, center_x, center_y)
                             saved_paths.append(saved_path)
                         else:
                             image.save(output_path)
@@ -347,7 +383,7 @@ class ComfyUI:
         return saved_paths
 
 
-def generate_image(prompt, server="http://nat.leeuu.com:60080", workflow=None, output=None):
+def generate_image(prompt, server="http://nat.leeuu.com:60080", workflow=None, output=None, width=None, height=None, center_x=None, center_y=None):
     """
     便捷函数：生成单张图片
     
@@ -356,12 +392,16 @@ def generate_image(prompt, server="http://nat.leeuu.com:60080", workflow=None, o
         server: ComfyUI服务器地址
         workflow: 工作流文件名（可选）
         output: 输出目录或文件路径（可选）
+        width: Target width (optional)
+        height: Target height (optional)
+        center_x: Center point X coordinate (optional, only for .2dani.bmp)
+        center_y: Center point Y coordinate (optional, only for .2dani.bmp)
     
     Returns:
         生成的图片路径列表
     """
     comfy = ComfyUI(server)
-    return comfy.generate_images(prompt, workflow, output)
+    return comfy.generate_images(prompt, workflow, output, width, height, center_x, center_y)
 
 
 if __name__ == "__main__":
@@ -371,12 +411,20 @@ if __name__ == "__main__":
     parser.add_argument('--server', default='http://nat.leeuu.com:60080', help='ComfyUI server address')
     parser.add_argument('--workflow', default='z_image.json', help='Workflow filename')
     parser.add_argument('--output', help='Output directory or file path')
+    parser.add_argument('--width', type=int, help='Target width')
+    parser.add_argument('--height', type=int, help='Target height')
+    parser.add_argument('--center-x', type=float, help='Center point X coordinate (only for .2dani.bmp)')
+    parser.add_argument('--center-y', type=float, help='Center point Y coordinate (only for .2dani.bmp)')
     
     args = parser.parse_args()
     paths = generate_image(
         prompt=args.prompt,
         server=args.server,
         workflow=args.workflow,
-        output=args.output
+        output=args.output,
+        width=args.width,
+        height=args.height,
+        center_x=args.center_x,
+        center_y=args.center_y
     )
     print(f'Generated images: {paths}')

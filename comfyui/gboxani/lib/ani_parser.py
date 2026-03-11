@@ -723,7 +723,7 @@ def parse_2dani_to_json_with_embedded_images(ani_data, base_name=None):
         return result
     
     result["animation"]["name"] = animation_name
-    result["animation"]["link_images"] = link_images
+    result["animation"]["link_images"] = []
     
     # 将提取的图片转换为base64编码
     import base64
