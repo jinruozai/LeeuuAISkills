@@ -1040,22 +1040,22 @@ def create_2dani_from_image(image_path, width, height, center_x=None, center_y=N
                                     "flag": 0x00020000,
                                     "vertices": [
                                         {
-                                            "position": [-half_width, -half_height, 0],
+                                            "position": [-center_x, -center_y, 0],
                                             "uv": [0, 0],
                                             "color": W_COLOR
                                         },
                                         {
-                                            "position": [half_width, -half_height, 0],
+                                            "position": [-center_x + width, -center_y, 0],
                                             "uv": [1, 0],
                                             "color": W_COLOR
                                         },
                                         {
-                                            "position": [-half_width, half_height, 0],
+                                            "position": [-center_x, -center_y + height, 0],
                                             "uv": [0, 1],
                                             "color": W_COLOR
                                         },
                                         {
-                                            "position": [half_width, half_height, 0],
+                                            "position": [-center_x + width, -center_y + height, 0],
                                             "uv": [1, 1],
                                             "color": W_COLOR
                                         }

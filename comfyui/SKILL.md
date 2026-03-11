@@ -78,6 +78,10 @@ python comfyui.py "[建筑风格提示词] [视角提示词] [具体建筑提示
 | `server` | str | `http://nat.leeuu.com:60080` | ComfyUI server address |
 | `workflow` | str | `z_image.json` | Workflow filename |
 | `output` | str | temp dir | Output directory or file path |
+| `width` | int | None | Target width (for image resizing or animation dimensions) |
+| `height` | int | None | Target height (for image resizing or animation dimensions) |
+| `center-x` | float | None | Center point X coordinate (only for .2dani.bmp format, relative to top-left corner) |
+| `center-y` | float | None | Center point Y coordinate (only for .2dani.bmp format, relative to top-left corner) |
 
 ## Example
 
@@ -100,9 +104,9 @@ python comfyui.py "Beach scene" --output /path/to/save
 # Generate an image to specific directory with custom name
 python comfyui.py "Beach scene" --output /path/to/save/beach_photo.png
 
-# Generate a GBox animation file directly
+# Generate a GBox animation file directly with custom dimensions and center point
 # Specify .2dani.bmp extension to automatically convert the generated image to animation format with embedded binary
-python comfyui.py "Pixel art character" --output character.2dani.bmp
+python comfyui.py "Pixel art character" --output character.2dani.bmp --width 160 --height 160 --center-x 80 --center-y 160
 ```
 
 ## Notes
