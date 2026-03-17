@@ -791,14 +791,15 @@ def create_2dani_from_json(json_data, preview_image_path="", embed_binary=False)
         img = Image.open(preview_image_path)
         width, height = img.size
         preview_data = write_png(img)
-        preview_size = len(preview_data)
     else:
         # 如果没有预览图片，创建一个默认的1x1像素图片
         from PIL import Image
         img = Image.new('RGBA', (1, 1), (255, 255, 255, 0))
         width, height = 1, 1
         preview_data = write_png(img)
-        preview_size = len(preview_data)
+    
+    # 计算预览数据大小（这必须是最终文件中的实际数据大小）
+    preview_size = len(preview_data)
     
     # 构建2D动画数据
     data_buffer = bytearray()
