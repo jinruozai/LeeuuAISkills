@@ -245,19 +245,43 @@ def _find_natural_cell_size_edge(alpha, bx, by, nx, ny):
     for i, (dy, w) in enumerate(dy_widths):
         if w < 50:
             continue
-        # 找 look_ahead 像素之后的宽度
         for j in range(i + 1, len(dy_widths)):
             dy2, w2 = dy_widths[j]
             if dy2 - dy >= look_ahead:
                 if w2 > w * 2.0:
-                    # 找到突变: 过渡点在 dy2 附近
                     transition_dy = dy2
-                    # cell_h = transition_dy * 2 / (nx + ny)
-                    # cell_w = 2 * cell_h
                     height_based = transition_dy * 4.0 / (nx + ny)
                 break
 
-    return max(ratio_based, height_based)
+    # 方法3: 扩展速率法 — 从底部向上扫描, 找内容宽度扩展速率骤降的位置
+    # 菱形下半部的内容宽度以 ~3.5-4.0/pixel 速率扩展,
+    # 当速率降至 <1.5 时, 说明到达了左右顶点 (菱形最宽处)。
+    # 此 dy = min(nx,ny) * hh → cell_w = 4 * dy / min(nx,ny)
+    plateau_based = 0.0
+    if len(dy_widths) >= 10:
+        window = 5  # 用 5 个样本计算平均速率
+        rates = []
+        for i in range(window, len(dy_widths)):
+            dy_cur, w_cur = dy_widths[i]
+            dy_prev, w_prev = dy_widths[i - window]
+            d_dy = dy_cur - dy_prev
+            if d_dy > 0:
+                rate = (w_cur - w_prev) / d_dy
+                rates.append((dy_cur, w_cur, rate))
+
+        # 找速率从高 (>2.5) 持续降到低 (<1.5) 的转折点
+        was_expanding = False
+        for dy_r, w_r, rate in rates:
+            if rate > 2.5:
+                was_expanding = True
+            elif was_expanding and rate < 1.5 and w_r > 100:
+                # 扩展速率骤降: 到达左右顶点
+                # 用理论 V 形宽度 (4*dy) 反推, 因为实测宽度可能被
+                # alpha 阈值截掉了半透明边缘像素
+                plateau_based = 4.0 * dy_r / min(nx, ny)
+                break
+
+    return max(ratio_based, height_based, plateau_based)
 
 
 # ───────────────────────── 菱形几何 ─────────────────────────
@@ -285,9 +309,57 @@ def grid_corner(left, i, j, cell_w, cell_h):
     return (left[0] + (i + j) * hw, left[1] + (i - j) * hh)
 
 
+def find_best_center_cell(bx, by, nx, ny, cell_w, cell_h):
+    """
+    找到最适合作为中心的格子 (i, j)。
+
+    计算物体的视觉质心, 找到距离质心水平位置最近的格子中心。
+    只用水平距离比较, 因为物体的高度(垂直方向)不影响占地中心。
+    """
+    # 用菱形几何中心找最近的格子
+    dcx, dcy = diamond_center(bx, by, nx, ny, cell_w, cell_h)
+
+    _, _, _, left = diamond_vertices(bx, by, nx, ny, cell_w, cell_h)
+
+    # 收集所有格子, 按 (距离, 越下越好即-y, 越左越好即+x) 排序
+    candidates = []
+    for i in range(nx):
+        for j in range(ny):
+            ccx, ccy = cell_center(left, i, j, cell_w, cell_h)
+            dist = (ccx - dcx) ** 2 + (ccy - dcy) ** 2
+            candidates.append((dist, -ccy, ccx, i, j))
+
+    candidates.sort()
+    return candidates[0][3], candidates[0][4]
+
+
+def footprint_cells(nx, ny, center_cell):
+    """
+    输出所有占地格子的相对坐标数组。
+
+    以 center_cell 为原点 [0,0]。
+    x 正方向: 右下 (i 增大方向)
+    y 正方向: 右上 (j 增大方向)
+    """
+    ci, cj = center_cell
+    cells = []
+    for i in range(nx):
+        for j in range(ny):
+            cells.append([i - ci, j - cj])
+    return cells
+
+
+def cell_center(left, i, j, cell_w, cell_h):
+    """格子 (i,j) 的中心点屏幕坐标。"""
+    hw = cell_w / 2.0
+    return (left[0] + (i + j + 1) * hw,
+            left[1] + (i - j) * cell_h / 2.0)
+
+
 # ───────────────────────── 可视化 ─────────────────────────
 
-def draw_result(img, bx, by, nx, ny, cell_w, cell_h, fit_type='edge'):
+def draw_result(img, bx, by, nx, ny, cell_w, cell_h,
+                fit_type='edge', center_cell=None):
     """绘制菱形网格、扫描线和标记点 (仅线条, 无填充)。"""
     result = img.copy()
     w, h = result.size
@@ -328,15 +400,24 @@ def draw_result(img, bx, by, nx, ny, cell_w, cell_h, fit_type='edge'):
     except Exception:
         pass
 
-    # center 贴合: 标记中心点 (青色)
+    # center 贴合: 标记脚部 (青色)
     if fit_type == 'center':
         cx, cy = diamond_center(bx, by, nx, ny, cell_w, cell_h)
         rc = 6
         draw.ellipse([cx - rc, cy - rc, cx + rc, cy + rc],
                      fill=(0, 255, 255, 255), outline=(0, 0, 200, 255), width=2)
+
+    # 最佳中心格子 (绿色圆点)
+    if center_cell is not None:
+        ci, cj = center_cell
+        ccx, ccy = cell_center(left, ci, cj, cell_w, cell_h)
+        rc = 8
+        draw.ellipse([ccx - rc, ccy - rc, ccx + rc, ccy + rc],
+                     fill=(0, 220, 0, 255), outline=(255, 255, 255, 255), width=2)
         try:
-            draw.text((cx + 10, cy - 12), f"center({cx:.0f},{cy:.0f})",
-                      fill=(0, 255, 255, 255))
+            draw.text((ccx + 12, ccy - 8),
+                      f"cell({ci},{cj})",
+                      fill=(0, 220, 0, 255))
         except Exception:
             pass
 
@@ -345,7 +426,36 @@ def draw_result(img, bx, by, nx, ny, cell_w, cell_h, fit_type='edge'):
 
 # ───────────────────────── 主入口 ─────────────────────────
 
-def analyze_image(image_path, nx, ny, fit_type='edge', output_path=None):
+def normalize_image(img, bx, by, nx, ny, nat_cw, nat_ch, best_cell):
+    """
+    将图片缩放到标准格子尺寸 (128x64), 并以最佳中心格为锚点居中。
+
+    缩放后, 菱形格子恰好为标准 128x64 大小。
+    中心格的中心作为输出图片的锚点 (center_x, center_y)。
+
+    Returns:
+        (normalized_img, center_x, center_y)
+    """
+    scale = CELL_W / nat_cw
+    orig_w, orig_h = img.size
+
+    # 缩放图片
+    new_w = max(1, int(round(orig_w * scale)))
+    new_h = max(1, int(round(orig_h * scale)))
+    scaled = img.resize((new_w, new_h), Image.LANCZOS)
+
+    # 缩放后的中心格坐标
+    ci, cj = best_cell
+    left = diamond_vertices(bx, by, nx, ny, nat_cw, nat_ch)[3]
+    ccx, ccy = cell_center(left, ci, cj, nat_cw, nat_ch)
+    center_x = ccx * scale
+    center_y = ccy * scale
+
+    return scaled, center_x, center_y
+
+
+def analyze_image(image_path, nx, ny, fit_type='edge',
+                  standardize=False, output_path=None):
     """
     分析等轴测图片, 找到物体的自然菱形占地。
 
@@ -353,10 +463,11 @@ def analyze_image(image_path, nx, ny, fit_type='edge', output_path=None):
         image_path: 输入图片路径 (RGBA)
         nx, ny: 占地格数
         fit_type: 'edge' 或 'center'
+        standardize: 是否缩放到标准 128x64 格子尺寸
         output_path: 输出路径
 
     Returns:
-        dict with bottom_vertex, natural_cell_w/h, scale, output_path
+        dict with bottom_vertex, natural_cell_w/h, scale, best_cell, output_path
     """
     img = Image.open(image_path).convert('RGBA')
     alpha = np.array(img)[:, :, 3]
@@ -400,11 +511,19 @@ def analyze_image(image_path, nx, ny, fit_type='edge', output_path=None):
     print(f"缩放到标准 {CELL_W}x{CELL_H}: {scale:.3f}")
 
     top, right, bottom, left = diamond_vertices(bx, by, nx, ny, nat_cw, nat_ch)
-    cx, cy = diamond_center(bx, by, nx, ny, nat_cw, nat_ch)
     print(f"菱形: 上({top[0]:.0f},{top[1]:.0f}) 右({right[0]:.0f},{right[1]:.0f}) "
           f"下({bottom[0]:.0f},{bottom[1]:.0f}) 左({left[0]:.0f},{left[1]:.0f})")
 
-    result_img = draw_result(img, bx, by, nx, ny, nat_cw, nat_ch, fit_type)
+    best_cell = find_best_center_cell(bx, by, nx, ny, nat_cw, nat_ch)
+    ci, cj = best_cell
+    ccx, ccy = cell_center(left, ci, cj, nat_cw, nat_ch)
+    fp_cells = footprint_cells(nx, ny, best_cell)
+    print(f"最佳中心格: ({ci},{cj})  坐标: ({ccx:.0f},{ccy:.0f})")
+    print(f"占地格子: {fp_cells}")
+
+    # 绘制分析结果
+    result_img = draw_result(img, bx, by, nx, ny, nat_cw, nat_ch, fit_type,
+                             center_cell=best_cell)
 
     if output_path is None:
         base = os.path.splitext(os.path.basename(image_path))[0]
@@ -414,22 +533,48 @@ def analyze_image(image_path, nx, ny, fit_type='edge', output_path=None):
     result_img.save(output_path)
     print(f"已保存: {output_path}")
 
-    return {
+    ret = {
         'bottom_vertex': (bx, by),
-        'center': (cx, cy),
+        'center': (ccx, ccy),
+        'best_cell': best_cell,
         'vertices': {'top': top, 'right': right, 'bottom': bottom, 'left': left},
         'natural_cell': (nat_cw, nat_ch),
         'scale': scale,
+        'footprint': fp_cells,
         'output_path': output_path,
     }
+
+    # 标准化: 缩放图片使格子恰好为 128x64
+    if standardize:
+        norm_img, cx_s, cy_s = normalize_image(
+            img, bx, by, nx, ny, nat_cw, nat_ch, best_cell)
+
+        norm_path = output_path.replace('_analyzed', '_std')
+        norm_img.save(norm_path)
+        print(f"标准化: {norm_img.size[0]}x{norm_img.size[1]}  "
+              f"中心点: ({cx_s:.1f},{cy_s:.1f})")
+        print(f"已保存: {norm_path}")
+
+        ret['std_path'] = norm_path
+        ret['std_size'] = norm_img.size
+        ret['std_center'] = (cx_s, cy_s)
+
+    return ret
 
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
-        print(f"用法: python {sys.argv[0]} <图片> <NxM> [edge|center]")
+        print(f"用法: python {sys.argv[0]} <图片> <NxM> [edge|center] [--std]")
         sys.exit(1)
 
     image_path = sys.argv[1]
     nx, ny = map(int, sys.argv[2].split('x'))
-    fit_type = sys.argv[3] if len(sys.argv) > 3 else 'edge'
-    analyze_image(image_path, nx, ny, fit_type)
+    args = sys.argv[3:]
+    fit_type = 'edge'
+    standardize = False
+    for a in args:
+        if a in ('edge', 'center'):
+            fit_type = a
+        elif a == '--std':
+            standardize = True
+    analyze_image(image_path, nx, ny, fit_type, standardize=standardize)

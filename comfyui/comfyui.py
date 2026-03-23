@@ -29,8 +29,10 @@ try:
     if os.path.exists(gboxani_lib) and gboxani_lib not in sys.path:
         sys.path.insert(0, gboxani_lib)
     from ani_parser import create_2dani_from_image
+    from image_analyzer import analyze_image as _analyze_iso_image
 except ImportError:
     create_2dani_from_image = None
+    _analyze_iso_image = None
 
 def _get_logger(name='comfyui'):
     logger = logging.getLogger(f'skill.{name}')
@@ -147,6 +149,51 @@ def _save_as_2dani(image, output_path, width=None, height=None, center_x=None, c
         image.save(fallback_path)
         return fallback_path
 
+def _compute_iso_params(image, ix, iy, anialign=0):
+    """
+    通过菱形占地分析, 计算标准化后的 width, height, center_x, center_y。
+
+    Args:
+        image: PIL Image (RGBA)
+        ix, iy: 占地格数 (如 4x4)
+        anialign: 对齐模式 0=edge(建筑/树), 1=center(角色)
+
+    Returns:
+        (width, height, center_x, center_y, footprint) 或 None
+    """
+    if _analyze_iso_image is None:
+        _logger.error("image_analyzer 不可用, 无法计算占地参数")
+        return None
+
+    # 保存临时图片供分析
+    temp_png = os.path.join(tempfile.gettempdir(), f"_iso_analyze_{uuid.uuid4().hex[:8]}.png")
+    try:
+        image.save(temp_png)
+        fit_type = 'center' if anialign == 1 else 'edge'
+        result = _analyze_iso_image(temp_png, ix, iy, fit_type, standardize=False)
+        if result is None:
+            return None
+
+        scale = result['scale']
+        new_w = max(1, int(round(image.width * scale)))
+        new_h = max(1, int(round(image.height * scale)))
+
+        # 中心格在缩放后的坐标
+        cx, cy = result['center']
+        center_x = cx * scale
+        center_y = cy * scale
+
+        footprint = result['footprint']
+        _logger.info(f"占地分析: {ix}x{iy} {fit_type}  缩放: {scale:.3f}  "
+                     f"尺寸: {new_w}x{new_h}  中心: ({center_x:.1f},{center_y:.1f})")
+        _logger.info(f"占地格子: {footprint}")
+
+        return new_w, new_h, center_x, center_y, footprint
+    finally:
+        if os.path.exists(temp_png):
+            os.remove(temp_png)
+
+
 DEFAULT_SERVER = "nat.leeuu.com:60080"
 DEFAULT_WORKFLOW = "z_image.json"
 
@@ -249,10 +296,12 @@ class ComfyUI:
         }
         return workflow_data
     
-    def generate_images(self, prompt_text=None, workflow_path=None, output=None, width=None, height=None, center_x=None, center_y=None):
+    def generate_images(self, prompt_text=None, workflow_path=None, output=None,
+                        width=None, height=None, center_x=None, center_y=None,
+                        ix=None, iy=None, anialign=0):
         """
         生成图像并返回保存的文件路径列表
-        
+
         Args:
             prompt_text: 提示词文本
             workflow_path: 工作流文件名或路径
@@ -261,6 +310,9 @@ class ComfyUI:
             height: Target height (optional)
             center_x: Center point X coordinate (optional, only for .2dani.bmp)
             center_y: Center point Y coordinate (optional, only for .2dani.bmp)
+            ix: 菱形占地 x 格数 (optional, 用于自动计算尺寸和中心点)
+            iy: 菱形占地 y 格数 (optional, 用于自动计算尺寸和中心点)
+            anialign: 对齐模式 0=edge(建筑/树), 1=center(角色) (default: 0)
         
         Returns:
             保存的图像路径列表
@@ -348,7 +400,14 @@ class ComfyUI:
                             image = _resize_image(image, width, height)
                         
                         if is_2dani:
-                            saved_path = _save_as_2dani(image, output_path, width, height, center_x, center_y)
+                            # 如果没传 width/height 但传了 ix/iy, 用占地分析自动计算
+                            _w, _h, _cx, _cy = width, height, center_x, center_y
+                            if _w is None and _h is None and ix is not None and iy is not None:
+                                iso = _compute_iso_params(image, ix, iy, anialign)
+                                if iso is not None:
+                                    _w, _h, _cx, _cy = iso[0], iso[1], iso[2], iso[3]
+                            _logger.info(f"2dani参数: width={_w} height={_h} center_x={_cx} center_y={_cy}")
+                            saved_path = _save_as_2dani(image, output_path, _w, _h, _cx, _cy)
                             saved_paths.append(saved_path)
                         else:
                             image.save(output_path)
@@ -383,10 +442,12 @@ class ComfyUI:
         return saved_paths
 
 
-def generate_image(prompt, server="http://nat.leeuu.com:60080", workflow=None, output=None, width=None, height=None, center_x=None, center_y=None):
+def generate_image(prompt, server="http://nat.leeuu.com:60080", workflow=None, output=None,
+                   width=None, height=None, center_x=None, center_y=None,
+                   ix=None, iy=None, anialign=0):
     """
     便捷函数：生成单张图片
-    
+
     Args:
         prompt: 图片描述
         server: ComfyUI服务器地址
@@ -396,12 +457,16 @@ def generate_image(prompt, server="http://nat.leeuu.com:60080", workflow=None, o
         height: Target height (optional)
         center_x: Center point X coordinate (optional, only for .2dani.bmp)
         center_y: Center point Y coordinate (optional, only for .2dani.bmp)
-    
+        ix: 菱形占地 x 格数 (optional)
+        iy: 菱形占地 y 格数 (optional)
+        anialign: 对齐模式 0=edge, 1=center (default: 0)
+
     Returns:
         生成的图片路径列表
     """
     comfy = ComfyUI(server)
-    return comfy.generate_images(prompt, workflow, output, width, height, center_x, center_y)
+    return comfy.generate_images(prompt, workflow, output, width, height,
+                                center_x, center_y, ix, iy, anialign)
 
 
 if __name__ == "__main__":
@@ -415,7 +480,10 @@ if __name__ == "__main__":
     parser.add_argument('--height', type=int, help='Target height')
     parser.add_argument('--center-x', type=float, help='Center point X coordinate (only for .2dani.bmp)')
     parser.add_argument('--center-y', type=float, help='Center point Y coordinate (only for .2dani.bmp)')
-    
+    parser.add_argument('--ix', type=int, help='菱形占地 x 格数 (自动计算尺寸/中心点)')
+    parser.add_argument('--iy', type=int, help='菱形占地 y 格数 (自动计算尺寸/中心点)')
+    parser.add_argument('--anialign', type=int, default=0, help='对齐模式 0=edge(建筑) 1=center(角色)')
+
     args = parser.parse_args()
     paths = generate_image(
         prompt=args.prompt,
@@ -425,6 +493,9 @@ if __name__ == "__main__":
         width=args.width,
         height=args.height,
         center_x=args.center_x,
-        center_y=args.center_y
+        center_y=args.center_y,
+        ix=args.ix,
+        iy=args.iy,
+        anialign=args.anialign
     )
     print(f'Generated images: {paths}')

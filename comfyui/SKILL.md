@@ -82,6 +82,9 @@ python comfyui.py "[建筑风格提示词] [视角提示词] [具体建筑提示
 | `height` | int | None | Target height (for image resizing or animation dimensions) |
 | `center-x` | float | None | Center point X coordinate (only for .2dani.bmp format, relative to top-left corner) |
 | `center-y` | float | None | Center point Y coordinate (only for .2dani.bmp format, relative to top-left corner) |
+| `ix` | int | None | 菱形占地 x 格数 (用于自动计算尺寸和中心点) |
+| `iy` | int | None | 菱形占地 y 格数 (用于自动计算尺寸和中心点) |
+| `anialign` | int | 0 | 对齐模式: 0=edge(建筑/树), 1=center(角色) |
 
 ## Example
 
@@ -107,6 +110,11 @@ python comfyui.py "Beach scene" --output /path/to/save/beach_photo.png
 # Generate a GBox animation file directly with custom dimensions and center point
 # Specify .2dani.bmp extension to automatically convert the generated image to animation format with embedded binary
 python comfyui.py "Pixel art character" --output character.2dani.bmp --width 160 --height 160 --center-x 80 --center-y 160
+
+# Generate with isometric footprint auto-analysis (自动计算尺寸和中心点)
+# ix/iy: 菱形占地格数, anialign: 0=edge(建筑/树), 1=center(角色)
+python comfyui.py "ancient tree" --workflow z_image_blindbox.json --output tree.2dani.bmp --ix 3 --iy 3 --anialign 0
+python comfyui.py "fairy character" --workflow z_image_blindbox.json --output fairy.2dani.bmp --ix 1 --iy 1 --anialign 1
 ```
 
 ## Notes
@@ -114,6 +122,35 @@ python comfyui.py "Pixel art character" --output character.2dani.bmp --width 160
 - Generation takes 20-60 seconds depending on workflow
 - Images auto-open in system default viewer
 - WebSocket timeout: 300 seconds
+
+## 菱形占地自动分析 (Isometric Footprint Analysis)
+
+当传入 `--ix` 和 `--iy` 参数时，系统会自动分析生成图片的菱形占地：
+
+1. **检测底部顶点** — 双候选策略 (滑动窗口 + 低阈值)，V 形宽度匹配选择
+2. **计算自然格子尺寸** — 比值法 + 高度突变法 + 扩展速率法，三者取最大
+3. **找最佳中心格** — 距菱形几何中心最近的格子，平局时取更下更左的
+4. **缩放到标准 128x64** — 自动计算 width, height, center_x, center_y
+5. **输出占地格子数组** — 以中心格为 [0,0]，x 正方向右下，y 正方向右上
+
+### 对齐模式 (anialign)
+
+| 值 | 模式 | 适用 | 说明 |
+|----|------|------|------|
+| 0 | edge | 建筑、树 | 物体底部边缘贴合菱形下两条边 |
+| 1 | center | 角色 | 物体脚部在菱形格中心位置 |
+
+### 独立分析工具
+
+```bash
+# 分析图片并绘制菱形网格标注
+python3 gboxani/lib/image_analyzer.py <图片> <NxM> [edge|center] [--std]
+
+# 示例
+python3 gboxani/lib/image_analyzer.py building.png 4x4 edge
+python3 gboxani/lib/image_analyzer.py character.png 1x1 center
+python3 gboxani/lib/image_analyzer.py tree.png 3x3 edge --std  # 同时输出标准化图片
+```
 
 ## GBox Animation Tools
 
