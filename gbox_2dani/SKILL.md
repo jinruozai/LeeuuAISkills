@@ -113,3 +113,32 @@ python gbox_2dani.py fit char.2dani.bmp --width 256 --height 256 --center-x 128 
 
 - Standard: PNG, JPEG, GIF
 - GBox: JGEIMGFLAG (JPEG+GIF mask), IMG1 (raw pixel), ALE
+
+## 菱形占地自动分析 (Isometric Footprint Analysis)
+
+`lib/image_analyzer.py` 分析等距图片的菱形占地，自动算出标准尺寸和中心点，结果可直接传给 `image_to_2dani`。
+依赖：`pip install Pillow numpy`
+
+1. **检测底部顶点** — 双候选策略 (滑动窗口 + 低阈值)，V 形宽度匹配选择
+2. **计算自然格子尺寸** — 比值法 + 高度突变法 + 扩展速率法，三者取最大
+3. **找最佳中心格** — 距菱形几何中心最近的格子，平局时取更下更左的
+4. **缩放到标准 128x64** — 自动计算 width, height, center_x, center_y
+5. **输出占地格子数组** — 以中心格为 [0,0]，x 正方向右下，y 正方向右上
+
+### 对齐模式
+
+| 值 | 模式 | 适用 | 说明 |
+|----|------|------|------|
+| edge | 0 | 建筑、树 | 物体底部边缘贴合菱形下两条边 |
+| center | 1 | 角色 | 物体脚部在菱形格中心位置 |
+
+```bash
+# 分析图片并绘制菱形网格标注
+python3 lib/image_analyzer.py <图片> <NxM> [edge|center] [--std]
+
+python3 lib/image_analyzer.py building.png 4x4 edge
+python3 lib/image_analyzer.py character.png 1x1 center
+python3 lib/image_analyzer.py tree.png 3x3 edge --std  # 同时输出标准化图片
+```
+
+典型流程：`comfyui` 出图 → `image_analyzer` 算出尺寸和中心点 → `image_to_2dani` 生成 `.2dani.bmp`。
